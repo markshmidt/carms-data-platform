@@ -1,0 +1,163 @@
+from dagster import asset
+import json
+import re
+import sys
+from pathlib import Path
+from dagster import AssetExecutionContext
+from services.api.app.models import Discipline, Program, ProgramStream, School  # noqa: E402
+from services.api.app.database import engine, Session  # noqa: E402
+from sqlmodel import select  # noqa: E402
+BASE_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(BASE_DIR))
+
+
+DATA_PATH = BASE_DIR / "data" / "raw" / "1503_markdown_program_descriptions_v2.json"
+
+
+@asset
+def raw_program_descriptions(context: AssetExecutionContext):
+    """
+    Loads raw scraped program descriptions JSON.
+    """
+
+    with open(DATA_PATH) as f:
+        data = json.load(f)
+    context.add_output_metadata({
+        "records_count": len(data),
+        "sample_id": data[0].get("id") if data else None
+    })
+    return data
+
+@asset
+def staging_program_descriptions(raw_program_descriptions):
+    """
+    Cleans markdown and extracts structured fields
+    """
+
+    cleaned = []
+
+    for record in raw_program_descriptions:
+        program_id = record.get("id")
+        text = record.get("page_content", "")
+        source = record.get("metadata", {}).get("source")
+
+        # Remove excessive newlines
+        text = re.sub(r"\n+", "\n", text)
+
+        cleaned.append({
+            "program_id": program_id,
+            "source_url": source,
+            "clean_text": text.strip()
+        })
+    print(len(cleaned))
+    print(cleaned[0])
+
+    return cleaned
+@asset
+def parse_program_records(staging_program_descriptions):
+
+    parsed = []
+
+    for record in staging_program_descriptions:
+        lines = record["clean_text"].split("\n")
+
+        header_line = next(
+            (line.strip("# ").strip() for line in lines if line.startswith("#")),
+            None
+        )
+
+        if not header_line:
+            continue
+
+        parts = header_line.split(" - ")
+        if len(parts) != 3:
+            continue
+
+        school_name, discipline_name, program_site = [p.strip() for p in parts]
+
+        program_stream = next(
+            (line.strip() for line in lines if "Stream" in line),
+            "Unknown"
+        )
+
+        description_start = next(
+            (i for i, line in enumerate(lines) if line.startswith("##")),
+            None
+        )
+
+        program_description = (
+            "\n".join(lines[description_start:])
+            if description_start
+            else record["clean_text"]
+        )
+
+        parsed.append({
+            "program_stream_id": record["program_id"],
+            "school_name": school_name,
+            "discipline_name": discipline_name,
+            "program_site": program_site,
+            "program_stream": program_stream,
+            "program_name": f"{school_name}/{discipline_name}/{program_site}",
+            "program_description": program_description,
+            "source_url": record["source_url"]
+        })
+
+    return parsed
+@asset
+def load_programs_to_db(parse_program_records):
+
+    with Session(engine) as session:
+
+        for record in parse_program_records:
+
+            school = session.exec(
+                select(School).where(School.name == record["school_name"])
+            ).first()
+
+            if not school:
+                school = School(name=record["school_name"])
+                session.add(school)
+                session.flush()
+
+            discipline = session.exec(
+                select(Discipline).where(
+                    Discipline.name == record["discipline_name"]
+                )
+            ).first()
+
+            if not discipline:
+                discipline = Discipline(name=record["discipline_name"])
+                session.add(discipline)
+                session.flush()
+
+            stream = session.exec(
+                select(ProgramStream).where(
+                    ProgramStream.name == record["program_stream"]
+                )
+            ).first()
+
+            if not stream:
+                stream = ProgramStream(name=record["program_stream"])
+                session.add(stream)
+                session.flush()
+
+            program = session.get(Program, record["program_stream_id"])
+
+            if not program:
+                program = Program(
+                    program_stream_id=record["program_stream_id"],
+                    name=record["program_name"],
+                    site=record["program_site"],
+                    url=record["source_url"],
+                    description=record["program_description"],
+                    school_id=school.id,
+                    discipline_id=discipline.id,
+                    stream_id=stream.id,
+                )
+                session.add(program)
+            else:
+                program.description = record["program_description"]
+
+        session.commit()
+
+    return "Loaded programs"

@@ -1,0 +1,25 @@
+[project]
+name = "piplines"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Mariia",email = "masha.shmidt.04@gmail.com"}
+]
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "fastapi (>=0.131.0,<0.132.0)",
+    "uvicorn (>=0.41.0,<0.42.0)",
+    "sqlmodel (>=0.0.37,<0.0.38)",
+    "psycopg2-binary (>=2.9.11,<3.0.0)",
+    "dagster (>=1.12.15,<2.0.0)",
+    "dagster-webserver (>=1.12.15,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+[tool.poetry]
+package-mode = false
+[tool.dagster]
+module_name = "pipeline.definitions"
