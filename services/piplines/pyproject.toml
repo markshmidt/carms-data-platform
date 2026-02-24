@@ -12,7 +12,8 @@ dependencies = [
     "sqlmodel (>=0.0.37,<0.0.38)",
     "psycopg2-binary (>=2.9.11,<3.0.0)",
     "dagster (>=1.12.15,<2.0.0)",
-    "dagster-webserver (>=1.12.15,<2.0.0)"
+    "dagster-webserver (>=1.12.15,<2.0.0)",
+    "pandas (<3)"
 ]
 
 

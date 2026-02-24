@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
+import hashlib
 
 class Discipline(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -22,7 +23,7 @@ class ProgramStream(SQLModel, table=True):
 
 
 class Program(SQLModel, table=True):
-    program_stream_id: str = Field(primary_key=True)  # ← IMPORTANT FIX
+    program_stream_id: str = Field(primary_key=True)
 
     name: str
     site: str
@@ -36,3 +37,4 @@ class Program(SQLModel, table=True):
     discipline: Optional[Discipline] = Relationship(back_populates="programs")
     school: Optional[School] = Relationship(back_populates="programs")
     stream: Optional[ProgramStream] = Relationship(back_populates="programs")
+    description_hash: Optional[str] = Field(default=None, index=True)
