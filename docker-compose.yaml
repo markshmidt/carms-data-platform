@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: carms_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: carms_user
+      POSTGRES_PASSWORD: carms_password
+      POSTGRES_DB: carms_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
