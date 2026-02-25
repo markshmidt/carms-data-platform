@@ -26,6 +26,7 @@ dagster_home/
 data/raw/*.json
 data/raw/program_descriptions/
 data/processed/
+*.csv
 
 # ===============================
 # Logs
@@ -37,9 +38,16 @@ data/processed/
 # ===============================
 .vscode/
 .idea/
+*.code-workspace
 
 # ===============================
 # OS
 # ===============================
 .DS_Store
 Thumbs.db
+
+# ===============================
+# Alembic
+# ===============================
+alembic/__pycache__/
+alembic/versions/__pycache__/

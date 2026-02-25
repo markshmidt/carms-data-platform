@@ -1,3 +1,4 @@
+from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
 import hashlib
@@ -38,3 +39,21 @@ class Program(SQLModel, table=True):
     school: Optional[School] = Relationship(back_populates="programs")
     stream: Optional[ProgramStream] = Relationship(back_populates="programs")
     description_hash: Optional[str] = Field(default=None, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class ProgramChangeLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    program_stream_id: str = Field(
+        foreign_key="program.program_stream_id",
+        index=True
+    )
+
+    changed_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        index=True
+    )
+
+    old_hash: Optional[str] = None
+    new_hash: str

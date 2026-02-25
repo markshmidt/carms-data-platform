@@ -1,3 +1,4 @@
+from datetime import datetime
 from dagster import asset
 import json
 import re
@@ -9,7 +10,7 @@ import hashlib
 BASE_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(BASE_DIR))
 
-from services.api.app.models import Discipline, Program, ProgramStream, School  # noqa: E402
+from services.api.app.models import Discipline, Program, ProgramChangeLog, ProgramStream, School  # noqa: E402
 from services.api.app.database import engine, Session  # noqa: E402
 from sqlmodel import select  # noqa: E402
 
@@ -159,6 +160,7 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
     inserted = 0
     updated = 0
     skipped = 0
+    change_logs = 0
 
     with Session(engine) as session:
         try:
@@ -223,11 +225,24 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
 
                 else:
                     if program.description_hash != new_hash:
+
+                        session.add(
+                            ProgramChangeLog(
+                                program_stream_id=program.program_stream_id,
+                                old_hash=program.description_hash,
+                                new_hash=new_hash,
+                            )
+                        )
+
                         program.description = record["program_description"]
                         program.description_hash = new_hash
+                        program.updated_at = datetime.utcnow()
                         updated += 1
+                        change_logs += 1
+
                     else:
                         skipped += 1
+
 
             session.commit()
 
@@ -239,13 +254,15 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
+        "change_logs": change_logs,
         "total_processed": len(parse_program_records)
     })
 
     return {
         "inserted": inserted,
         "updated": updated,
-        "skipped": skipped
+        "skipped": skipped,
+        "change_logs": change_logs,
     }
 
 @asset_check(asset=load_programs_to_db)

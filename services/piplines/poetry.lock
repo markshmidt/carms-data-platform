@@ -292,17 +292,17 @@ dagster-shared = "1.12.15"
 docstring-parser = "*"
 filelock = "*"
 grpcio = [
-    {version = ">=1.44.0", markers = "python_version < \"3.13\""},
     {version = ">=1.66.2", markers = "python_version >= \"3.13\""},
+    {version = ">=1.44.0", markers = "python_version < \"3.13\""},
 ]
 grpcio-health-checking = [
-    {version = ">=1.44.0", markers = "python_version < \"3.13\""},
     {version = ">=1.66.2", markers = "python_version >= \"3.13\""},
+    {version = ">=1.44.0", markers = "python_version < \"3.13\""},
 ]
 Jinja2 = "*"
 protobuf = [
-    {version = ">=3.20.0,<7", markers = "python_version < \"3.11\""},
     {version = ">=4,<7", markers = "python_version >= \"3.11\""},
+    {version = ">=3.20.0,<7", markers = "python_version < \"3.11\""},
 ]
 psutil = {version = ">=1.0", markers = "platform_system == \"Windows\""}
 python-dotenv = "*"
@@ -320,8 +320,8 @@ toposort = ">=1.0"
 tqdm = "<5"
 tzdata = "*"
 universal_pathlib = [
-    {version = "*", markers = "python_version < \"3.12\""},
     {version = ">=0.2.0", markers = "python_version >= \"3.12\""},
+    {version = "*", markers = "python_version < \"3.12\""},
 ]
 watchdog = ">=0.8.3,<7"
 
@@ -1425,9 +1425,9 @@ files = [
 
 [package.dependencies]
 numpy = [
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
     {version = ">=1.22.4", markers = "python_version < \"3.11\""},
     {version = ">=1.23.2", markers = "python_version == \"3.11\""},
-    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -3000,4 +3000,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.15"
-content-hash = "05b33ec58b1b69d5179a9b86261dbb984494d3c5d09cd80f1304ec288ce7e24f"
+content-hash = "41f83872bd763410e7abb9b6cecc1ddb6045c21693ddf87d54973a7a0eed6dce"
