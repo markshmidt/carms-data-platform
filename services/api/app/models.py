@@ -1,8 +1,9 @@
 from datetime import datetime
+from sqlalchemy import Column
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
 import hashlib
-
+from pgvector.sqlalchemy import Vector
 class Discipline(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
@@ -39,6 +40,9 @@ class Program(SQLModel, table=True):
     school: Optional[School] = Relationship(back_populates="programs")
     stream: Optional[ProgramStream] = Relationship(back_populates="programs")
     description_hash: Optional[str] = Field(default=None, index=True)
+    embedding: Optional[list[float]] = Field(
+        sa_column=Column(Vector(384))
+    )
     updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 

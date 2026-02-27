@@ -13,7 +13,7 @@ sys.path.insert(0, str(BASE_DIR))
 from services.api.app.models import Discipline, Program, ProgramChangeLog, ProgramStream, School  # noqa: E402
 from services.api.app.database import engine, Session  # noqa: E402
 from sqlmodel import select  # noqa: E402
-
+from langchain_huggingface import HuggingFaceEmbeddings
 
 DATA_PATH = BASE_DIR / "data" / "raw" / "1503_markdown_program_descriptions_v2.json"
 
@@ -275,3 +275,43 @@ def check_program_count(context):
         passed=len(count) == 815,
         metadata={"db_program_count": len(count)}
     )
+
+@asset
+def embed_programs(context: AssetExecutionContext, load_programs_to_db):
+
+    embeddings = HuggingFaceEmbeddings(
+        model_name="intfloat/e5-small-v2"
+    )
+
+    embedded = 0
+    skipped = 0
+
+    with Session(engine) as session:
+
+        programs = session.exec(select(Program)).all()
+
+        programs_to_embed = [p for p in programs if not p.embedding]
+
+        if not programs_to_embed:
+            context.add_output_metadata({
+                "embedded": 0,
+                "skipped": len(programs),
+                "total": len(programs),
+            })
+            return 
+        texts = [p.description for p in programs_to_embed]
+
+        #Batch embed (THIS IS THE KEY)
+        vectors = embeddings.embed_documents(texts)
+
+        # Assign back
+        for program, vector in zip(programs_to_embed, vectors):
+            program.embedding = vector
+
+        session.commit()
+
+        context.add_output_metadata({
+                "embedded": len(programs_to_embed),
+                "skipped": len(programs) - len(programs_to_embed),
+                "total": len(programs),
+            })

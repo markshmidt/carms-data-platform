@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Depends
-from sqlmodel import SQLModel, Session
+from fastapi import FastAPI, Depends, HTTPException
+from sqlmodel import SQLModel, Session, select
 from .database import engine, get_session
-from .models import Program, Discipline
+from .models import Program, Discipline, School, ProgramStream
+from .llm.qa import qa as qa_chain
 
 app = FastAPI()
 
@@ -65,3 +66,7 @@ def get_program_stream(program_stream_id: int, session: Session = Depends(get_se
         raise HTTPException(status_code=404, detail="Program stream not found")
     return program_stream
 
+@app.get("/ask")
+def ask_question(q: str):
+    result = qa_chain.invoke(q)
+    return {"answer": result}

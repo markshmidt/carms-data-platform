@@ -1,0 +1,64 @@
+[project]
+name = "carms-data-platform"
+version = "0.1.0"
+description = "CaRMS Data Platform — API + Dagster pipelines"
+authors = [
+    {name = "Mariia", email = "masha.shmidt.04@gmail.com"}
+]
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    # Web / API
+    "fastapi (>=0.131.0,<0.132.0)",
+    "uvicorn (>=0.41.0,<0.42.0)",
+
+    # Database
+    "sqlmodel (>=0.0.37,<0.0.38)",
+    "psycopg2-binary (>=2.9.11,<3.0.0)",
+    "pgvector (>=0.4.2,<0.5.0)",
+    "alembic (>=1.18.4,<2.0.0)",
+
+    # Dagster
+    "dagster (>=1.12.15,<2.0.0)",
+    "dagster-webserver (>=1.12.15,<2.0.0)",
+
+    # LLM / Embeddings
+    "langchain (>=1.2.10,<2.0.0)",
+    "langchain-openai (>=1.1.10,<2.0.0)",
+    "langchain-community (>=0.4.1,<0.5.0)",
+    "langchain-huggingface (>=1.2.0,<2.0.0)",
+    "openai (>=2.24.0,<3.0.0)",
+    "tiktoken (>=0.12.0,<0.13.0)",
+    "langchain-chroma (>=0.2.0,<1.0.0)",
+    "langchain-ollama (>=0.3.0,<1.0.0)",
+    "chromadb (>=1.5.1,<2.0.0)",
+    "ollama (>=0.6.1,<0.7.0)",
+    "sentence-transformers (>=5.2.3,<6.0.0)",
+
+    # Utils
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "pandas (<3)",
+    "torch (>=2.10.0,<3.0.0)",
+    "torchvision (>=0.25.0,<0.26.0)",
+    "torchaudio (>=2.10.0,<3.0.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+torch = {source = "pytorch-cu126"}
+torchvision = {source = "pytorch-cu126"}
+torchaudio = {source = "pytorch-cu126"}
+
+[[tool.poetry.source]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+priority = "explicit"
+
+[tool.dagster]
+module_name = "services.piplines.pipeline.definitions"
