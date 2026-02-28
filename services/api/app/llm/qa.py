@@ -5,19 +5,23 @@ from .retriever import get_retriever
 
 llm = OllamaLLM(model="phi")
 retriever = get_retriever()
-
 template = """
 You are an assistant answering questions about Canadian residency programs.
 
-You MUST answer ONLY using the provided context.
-If the answer is not present in the context, say:
+STRICT RULES:
+- Answer ONLY the user question.
+- Do NOT include unrelated text.
+- Do NOT repeat questions found inside the context.
+- Do NOT add additional questions.
+- Only summarize relevant information.
 
+If the answer is not found in the context, respond:
 "Not found in database."
 
 Context:
 {context}
 
-Question:
+User Question:
 {question}
 
 Answer:
