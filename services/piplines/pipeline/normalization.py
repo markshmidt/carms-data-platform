@@ -1,0 +1,36 @@
+# Mapoping French -> English for disciplines since there are french descriptions in the data
+
+DISCIPLINE_FR_TO_EN = {
+    "Anesthésiologie": "Anesthesiology",
+    "Chirurgie cardiaque": "Cardiac Surgery",
+    "Chirurgie générale": "General Surgery",
+    "Chirurgie orthopédique": "Orthopedic Surgery",
+    "Chirurgie plastique": "Plastic Surgery",
+    "Chirurgie vasculaire": "Vascular Surgery",
+    "Dermatologie": "Dermatology",
+    "Génétique et génomique médicales": "Medical Genetics and Genomics",
+    "Médecine d'urgence": "Emergency Medicine",
+    "Médecine familiale": "Family Medicine",
+    "Médecine interne": "Internal Medicine",
+    "Médecine nucléaire": "Nuclear Medicine",
+    "Médecine physique et réadaptation": "Physical Medicine & Rehabilitation",
+    "Neurochirurgie": "Neurosurgery",
+    "Neurologie": "Neurology",
+    "Neurologie chez l'enfant": "Neurology",
+    "Obstétrique et Gynécologie": "Obstetrics and Gynecology",
+    "Ophtalmologie": "Ophthalmology",
+    "Oto-rhino-laryngologie et chirurgie cervico": "Otolaryngology",
+    "Oto-rhino-laryngologie et chirurgie cervico-faciale": "Otolaryngology",
+    "Pathologie diagnostique et moléculaire": "Pathology",
+    "Pédiatrie": "Pediatrics",
+    "Psychiatrie": "Psychiatry",
+    "Santé publique et médecine préventive": "Public Health and Preventive Medicine",
+    "Urologie": "Urology",
+}
+SCHOOL_FR_TO_EN = {
+    "université mcgill": "McGill University",
+    "université d’ottawa": "University of Ottawa",
+    "université d'ottawa": "University of Ottawa",
+    "université de montréal": "University of Montreal",
+    "université de sherbrooke": "University of Sherbrooke",
+}

@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from fastapi import FastAPI
+from sqlalchemy import text
 from sqlmodel import SQLModel
 from services.api.app.database import engine
 from services.api.routes import health, programs, qa
@@ -18,6 +19,9 @@ app.include_router(qa.router)
 
 @app.on_event("startup")
 def on_startup():
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
     SQLModel.metadata.create_all(engine)
 
 

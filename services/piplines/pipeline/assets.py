@@ -21,6 +21,17 @@ from services.api.app.models import (  # noqa: E402
     School,
 )
 from services.api.app.database import engine, Session  # noqa: E402
+from .normalization import DISCIPLINE_FR_TO_EN, SCHOOL_FR_TO_EN
+import unicodedata
+from sqlalchemy import text
+from sqlmodel import SQLModel
+with engine.connect() as conn:
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    conn.commit()
+SQLModel.metadata.create_all(engine)
+
+def normalize_text(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).strip()
 
 # ── Constants ──────────────────────────────────────────────────────
 DATA_PATH = BASE_DIR / "data" / "raw" / "1503_markdown_program_descriptions_v2.json"
@@ -70,10 +81,8 @@ def staging_program_descriptions(raw_program_descriptions):
 
     return cleaned
 
-
 @asset
 def parse_program_records(staging_program_descriptions):
-    """Parse header, discipline, school, site, and stream from each record."""
 
     parsed = []
     skipped_headers = []
@@ -81,64 +90,125 @@ def parse_program_records(staging_program_descriptions):
     for record in staging_program_descriptions:
         lines = record["clean_text"].split("\n")
 
-        # ── Extract header ─────────────────────────────────────────
-        header_line = next(
-            (line.strip("# ").strip() for line in lines if line.startswith("#")),
-            None,
+        # Find header
+        header_index = next(
+            (i for i, line in enumerate(lines) if line.startswith("#")),
+            None
         )
 
-        if not header_line:
+        if header_index is None:
             skipped_headers.append("NO HEADER")
             continue
 
+        header_line = lines[header_index].strip("# ").strip()
+
+        # Handle wrapped header (French long ones)
+        if header_index + 1 < len(lines):
+            next_line = lines[header_index + 1].strip()
+
+            if (
+                next_line
+                and not next_line.startswith("#")
+                and "Stream" not in next_line
+                and "Residency Match" not in next_line
+            ):
+                header_line = f"{header_line} {next_line}"
+            if header_line.endswith("-"):
+                header_line = f"{header_line}{next_line}"
+            else:
+                header_line = f"{header_line} {next_line}"
+
+        # Normalize dashes + spacing
+        header_line = header_line.replace("–", "-").replace("—", "-")
+        header_line = re.sub(r"\s*-\s*", " - ", header_line)
+        header_line = re.sub(r"\s+", " ", header_line).strip()
+
         parts = header_line.split(" - ")
+
+        if len(parts) < 2:
+            skipped_headers.append(header_line)
+            continue
+
         school_name = parts[0].strip()
+        school_norm = normalize_text(school_name)
+        school_name = SCHOOL_FR_TO_EN.get(school_norm, school_name)
+        remainder = [p.strip() for p in parts[1:] if p.strip()]
 
-        # Header contains site normally (725 cases)
-        if len(parts) >= 3 and parts[-1].strip():
-            program_site = parts[-1].strip()
-            discipline_name = " - ".join(parts[1:-1]).strip()
+        # Discipline parsing logic
 
-        # Header ends with dash — site on the next line (90 cases)
-        elif len(parts) >= 2:
-            discipline_name = " - ".join(parts[1:]).strip(" -")
-            program_site = None
+        discipline_name = None
+        program_site = None
 
-            header_index = next(
-                i for i, line in enumerate(lines)
-                if line.startswith("#")
-            )
+        if not remainder:
+            skipped_headers.append(header_line)
+            continue
 
-            for candidate in lines[header_index + 1:]:
-                candidate = candidate.strip()
-                if candidate and not candidate.startswith("#"):
-                    program_site = candidate
-                    break
+        first = remainder[0]
+        first_lower = first.lower()
 
-            if not program_site:
-                raise ValueError(f"Could not determine site for: {header_line}")
+       # Family Medicine (EN + FR)
+
+        if (
+            first_lower.startswith("family medicine")
+            or first_lower.startswith("médecine familiale")
+        ):
+
+            discipline_base = "Family Medicine"
+
+            # Exact allowed integrated variants
+            allowed_integrated = {
+                "integrated clinician scholar",
+                "integrated emergency medicine",
+            }
+
+            if len(remainder) > 1:
+                second_clean = remainder[1].strip().lower()
+
+                if second_clean in allowed_integrated:
+                    discipline_name = f"{discipline_base} {remainder[1]}"
+                    program_site = " - ".join(remainder[2:]) if len(remainder) > 2 else None
+                else:
+                    # everything else is site
+                    discipline_name = discipline_base
+                    program_site = " - ".join(remainder[1:]) if len(remainder) > 1 else None
+            else:
+                discipline_name = discipline_base
+                program_site = None
 
         else:
-            raise ValueError(f"Unexpected header format: {header_line}")
+            discipline_name = remainder[0]
+            program_site = " - ".join(remainder[1:]) if len(remainder) > 1 else None
 
-        # ── Extract program_stream_id ──────────────────────────────
+        # French → English mapping
+
+        discipline_norm = normalize_text(discipline_name)
+        discipline_name = DISCIPLINE_FR_TO_EN.get(
+            discipline_norm,
+            discipline_name
+        )
+
+        # Program ID
+
         raw_id = record["program_id"]
         id_parts = raw_id.split("|")
+
         if len(id_parts) != 2:
             raise ValueError(f"Invalid program_id format: {raw_id}")
 
         program_stream_id = id_parts[1].strip()
 
-        # ── Extract stream label ───────────────────────────────────
+        # Stream
+
         program_stream = next(
             (line.strip() for line in lines if "Stream" in line),
-            "Unknown",
+            "Unknown"
         )
 
-        # ── Extract description body ──────────────────────────────
+        # Description
+
         description_start = next(
             (i for i, line in enumerate(lines) if line.startswith("##")),
-            None,
+            None
         )
 
         program_description = (
@@ -155,10 +225,9 @@ def parse_program_records(staging_program_descriptions):
             "program_stream": program_stream,
             "program_name": f"{school_name}/{discipline_name}/{program_site}",
             "program_description": program_description,
-            "source_url": record["source_url"],
+            "source_url": record["source_url"]
         })
 
-    # Hard-fail if any records were skipped
     if skipped_headers:
         raise Exception(
             f"{len(skipped_headers)} records skipped. Example: {skipped_headers[:5]}"
@@ -167,11 +236,10 @@ def parse_program_records(staging_program_descriptions):
     print("Total parsed:", len(parsed))
     return parsed
 
-
 @asset
 def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
-    """Upsert parsed programs into the database, tracking description changes."""
 
+   
     inserted = 0
     updated = 0
     skipped = 0
@@ -181,12 +249,12 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
         try:
             for record in parse_program_records:
 
-                # ── Hash the description ───────────────────────────
+                # --- Compute hash ---
                 new_hash = hashlib.sha256(
                     record["program_description"].encode("utf-8")
                 ).hexdigest()
 
-                # ── Get or create School ───────────────────────────
+                # --- Get or create school ---
                 school = session.exec(
                     select(School).where(School.name == record["school_name"])
                 ).first()
@@ -196,7 +264,7 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
                     session.add(school)
                     session.flush()
 
-                # ── Get or create Discipline ───────────────────────
+                # --- Get or create discipline ---
                 discipline = session.exec(
                     select(Discipline).where(
                         Discipline.name == record["discipline_name"]
@@ -208,7 +276,7 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
                     session.add(discipline)
                     session.flush()
 
-                # ── Get or create ProgramStream ────────────────────
+                # --- Get or create stream ---
                 stream = session.exec(
                     select(ProgramStream).where(
                         ProgramStream.name == record["program_stream"]
@@ -220,7 +288,7 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
                     session.add(stream)
                     session.flush()
 
-                # ── Get existing program or insert ─────────────────
+                # --- Get existing program ---
                 program = session.get(Program, record["program_stream_id"])
 
                 if not program:
@@ -240,6 +308,7 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
 
                 else:
                     if program.description_hash != new_hash:
+
                         session.add(
                             ProgramChangeLog(
                                 program_stream_id=program.program_stream_id,
@@ -247,13 +316,16 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
                                 new_hash=new_hash,
                             )
                         )
+
                         program.description = record["program_description"]
                         program.description_hash = new_hash
                         program.updated_at = datetime.utcnow()
                         updated += 1
                         change_logs += 1
+
                     else:
                         skipped += 1
+
 
             session.commit()
 
@@ -266,7 +338,7 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
         "updated": updated,
         "skipped": skipped,
         "change_logs": change_logs,
-        "total_processed": len(parse_program_records),
+        "total_processed": len(parse_program_records)
     })
 
     return {
@@ -275,12 +347,6 @@ def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
         "skipped": skipped,
         "change_logs": change_logs,
     }
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Asset Checks
-# ═══════════════════════════════════════════════════════════════════
-
 
 @asset_check(asset=load_programs_to_db)
 def check_program_count(context):
@@ -291,24 +357,27 @@ def check_program_count(context):
 
     return AssetCheckResult(
         passed=len(count) == 815,
-        metadata={"db_program_count": len(count)},
+        metadata={"db_program_count": len(count)}
     )
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Embedding
-# ═══════════════════════════════════════════════════════════════════
-
 
 @asset
 def embed_programs(context: AssetExecutionContext, load_programs_to_db):
     """Generate vector embeddings for programs that don't have one yet."""
 
-    embeddings = HuggingFaceEmbeddings(model_name="intfloat/e5-small-v2")
+    embeddings = HuggingFaceEmbeddings(
+        model_name="intfloat/e5-small-v2"
+    )
+
+    embedded = 0
+    skipped = 0
 
     with Session(engine) as session:
-        programs = session.exec(select(Program)).all()
-        programs_to_embed = [p for p in programs if not p.embedding]
+
+        programs = session.exec(
+            select(Program).where(Program.embedding.is_(None))
+        ).all()
+
+        programs_to_embed = [p for p in programs if p.embedding is None]
 
         if not programs_to_embed:
             context.add_output_metadata({
@@ -316,19 +385,18 @@ def embed_programs(context: AssetExecutionContext, load_programs_to_db):
                 "skipped": len(programs),
                 "total": len(programs),
             })
-            return
-
-        # Batch embed all descriptions at once
+            return 
         texts = [p.description for p in programs_to_embed]
         vectors = embeddings.embed_documents(texts)
 
+        # Assign back
         for program, vector in zip(programs_to_embed, vectors):
             program.embedding = vector
 
         session.commit()
 
         context.add_output_metadata({
-            "embedded": len(programs_to_embed),
-            "skipped": len(programs) - len(programs_to_embed),
-            "total": len(programs),
-        })
+                "embedded": len(programs_to_embed),
+                "skipped": len(programs) - len(programs_to_embed),
+                "total": len(programs),
+            })
