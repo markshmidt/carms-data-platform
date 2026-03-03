@@ -1,6 +1,11 @@
 version: "3.9"
 
+x-common-env: &common-env
+  DATABASE_URL: postgresql://carms_user:carms_password@postgres:5432/carms_db
+  PYTHONPATH: /app
+
 services:
+  # ── PostgreSQL + pgvector ─────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg15
     container_name: carms_postgres
@@ -13,6 +18,90 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carms_user -d carms_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI ───────────────────────────────────────────────────────
+  api:
+    build: .
+    container_name: carms_api
+    command: uvicorn services.api.app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-env
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - .:/app
+      - chroma_data:/app/chroma_store
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Dagster webserver ─────────────────────────────────────────────
+  dagster-webserver:
+    build: .
+    container_name: carms_dagster_webserver
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -w /app/workspace.yaml
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *common-env
+      DAGSTER_HOME: /app/dagster_home
+    volumes:
+      - .:/app
+      - dagster_home:/app/dagster_home
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Dagster daemon (schedules, sensors, run queue) ────────────────
+  dagster-daemon:
+    build: .
+    container_name: carms_dagster_daemon
+    command: dagster-daemon run
+    environment:
+      <<: *common-env
+      DAGSTER_HOME: /app/dagster_home
+    volumes:
+      - .:/app
+      - dagster_home:/app/dagster_home
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Streamlit UI ──────────────────────────────────────────────────
+  streamlit:
+    build: .
+    container_name: carms_streamlit
+    command: >
+      streamlit run services/api/app/ui/app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - .:/app
+    depends_on:
+      - api
+
+  # ── Ollama LLM server ────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: carms_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
 
 volumes:
   postgres_data:
+  chroma_data:
+  dagster_home:
+  ollama_data:
