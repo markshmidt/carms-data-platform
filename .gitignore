@@ -10,7 +10,10 @@ __pycache__/
 # Dagster
 # ===============================
 .dagster/
-dagster_home/
+dagster_home/*.db
+dagster_home/*.sqlite
+dagster_home/logs/
+dagster_home/storage/
 .tmp_dagster_home_*/
 
 # ===============================

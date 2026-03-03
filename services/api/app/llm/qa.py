@@ -2,8 +2,12 @@ from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import RetrievalQA
 from langchain_ollama import OllamaLLM
 from .retriever import get_retriever
+from ..config import OLLAMA_BASE_URL
 
-llm = OllamaLLM(model="phi")
+llm = OllamaLLM(
+    model="phi",
+    base_url=OLLAMA_BASE_URL,
+)
 retriever = get_retriever()
 template = """
 You are an assistant answering questions about Canadian residency programs.

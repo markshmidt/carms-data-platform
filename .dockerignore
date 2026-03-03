@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dagster local state
+.dagster/
+.tmp_dagster_home_*/
+
+# Environment (injected via docker-compose)
+.env
+.env.*
+!.env.example
+
+# Docker
+Dockerfile
+docker-compose.yaml
+.dockerignore

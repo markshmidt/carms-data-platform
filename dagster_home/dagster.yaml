@@ -1,0 +1,2 @@
+# Dagster instance configuration – default SQLite storage.
+# All instance databases are stored under DAGSTER_HOME.
