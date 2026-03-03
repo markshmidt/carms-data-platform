@@ -7,6 +7,52 @@ from sqlmodel import Session, select, func
 from services.api.app.database import get_session
 from services.api.app.models import Program, Discipline, ProgramChangeLog, School, ProgramStream
 from sqlalchemy import or_
+from sqlalchemy import cast, Date
+from datetime import datetime as dt
+from fastapi import HTTPException
+# ── Shared keyword lists (EN + FR) ─────────────────────────────────
+
+_CITIZENSHIP_KEYWORDS = [
+    "%canadian citizen%",
+    "%permanent residen%",
+    "%citizenship%",
+    # French
+    "%citoyenneté canadienne%",
+    "%résident permanent%",
+    "%résidence permanente%",
+]
+
+_INTERVIEW_SECTION_KEYWORDS = [
+    "%# Interview%",
+    # French
+    "%# Entrevue%",
+    "%# Entretien%",
+    "%#d'examen%",
+]
+
+_APPLICATION_STATS_KEYWORDS = [
+    "%average number of applications%",
+    # French
+    "%nombre moyen de demandes%",
+    "%nombre moyen de candidatures%",
+]
+
+_EVALUATION_CRITERIA_KEYWORDS = [
+    "%interview evaluation criteria%",
+    # French
+    "%évaluation pour les entrevues%",
+    "%critères d'évaluation%",
+    "%critères de sélection%",
+    
+]
+
+_INTERVIEW_OFFER_PCT_KEYWORDS = [
+    "%average percentage of applicants offered interviews%",
+    # French
+    "%pourcentage moyen%invités en entrevue%",
+    "%pourcentage moyen%offert%entrevue%",
+    "%nombre moyen de demandes%"
+]
 
 router = APIRouter()
 
@@ -38,7 +84,7 @@ def get_programs(
 
         # Exclude embedding (numpy array) from JSON response
         return [
-            r.model_dump(exclude={"embedding"}) for r in results
+            r.model_dump(exclude={"embedding", "description_hash"}) for r in results
         ]
 
 
@@ -53,13 +99,16 @@ def summary(session: Session = Depends(get_session)):
     disciplines = session.exec(select(func.count(Discipline.id))).one()
     schools = session.exec(select(func.count(School.id))).one()
     streams = session.exec(select(func.count(ProgramStream.id))).one()
-
+    french_programs = session.exec(select(func.count(Program.program_stream_id)).where(Program.description.ilike("%Langue de candidature%"))).one()
+    english_programs = session.exec(select(func.count(Program.program_stream_id)).where(Program.description.ilike("%Program application language%"))).one()
     return {
         "total_programs": total,
         "with_description": with_desc,
         "disciplines": disciplines,
         "schools": schools,
         "streams": streams,
+        "french_programs": french_programs,
+        "english_programs": english_programs,
     }
 
 
@@ -107,8 +156,7 @@ def stream_counts(session: Session = Depends(get_session)):
 def citizenship_mentions(session: Session = Depends(get_session)):
     """Programs whose description mentions Canadian citizenship / permanent residency."""
     
-    keywords = ["%canadian citizen%", "%permanent residen%", "%citizenship%"]
-    filters = or_(*[Program.description.ilike(kw) for kw in keywords])
+    filters = or_(*[Program.description.ilike(kw) for kw in _CITIZENSHIP_KEYWORDS])
 
     programs = session.exec(
         select(
@@ -138,56 +186,23 @@ def citizenship_mentions(session: Session = Depends(get_session)):
         ],
     }
 
-
-@router.get("/analytics/citizenship-by-discipline")
-def citizenship_by_discipline(session: Session = Depends(get_session)):
-    """Count of citizenship-mentioning programs grouped by discipline."""
-    from sqlalchemy import or_
-
-    keywords = ["%canadian citizen%", "%permanent residen%", "%citizenship%"]
-    filters = or_(*[Program.description.ilike(kw) for kw in keywords])
-
-    result = session.exec(
-        select(
-            Discipline.name,
-            func.count(Program.program_stream_id),
-        )
-        .join(Program)
-        .where(Program.description.isnot(None))
-        .where(filters)
-        .group_by(Discipline.name)
-        .order_by(func.count(Program.program_stream_id).desc())
-    ).all()
-
-    return [{"discipline": name, "count": count} for name, count in result]
-
-
-@router.get("/analytics/citizenship-by-school")
-def citizenship_by_school(session: Session = Depends(get_session)):
-    """Count of citizenship-mentioning programs grouped by school."""
-    from sqlalchemy import or_
-
-    keywords = ["%canadian citizen%", "%permanent residen%", "%citizenship%"]
-    filters = or_(*[Program.description.ilike(kw) for kw in keywords])
-
-    result = session.exec(
-        select(
-            School.name,
-            func.count(Program.program_stream_id),
-        )
-        .join(Program)
-        .where(Program.description.isnot(None))
-        .where(filters)
-        .group_by(School.name)
-        .order_by(func.count(Program.program_stream_id).desc())
-    ).all()
-
-    return [{"school": name, "count": count} for name, count in result]
-
-
 # ── Interview helpers ───────────────────────────────────────────────
 
-# Standard criteria in the interview evaluation table
+# French to English mapping for interview evaluation criteria
+_FR_TO_EN_CRITERIA: dict[str, str] = {
+    "Activités savantes":          "Scholarly activities",
+    "Collégialité":                "Collegiality",
+    "Compétences en collaboration":"Collaboration skills",
+    "Compétences en communication":"Communication skills",
+    "Compétences en leadership":   "Leadership skills",
+    "Intérêt envers la discipline":"Interest in the discipline",
+    "Intérêt envers le programme": "Interest in the program",
+    "Professionnalisme":           "Professionalism",
+    "Promotion de la santé":       "Health advocacy",
+    "Autres composants d'entrevue":"Other interview component(s)",
+}
+
+# Standard criteria (canonical English names, used for charts)
 _STANDARD_CRITERIA = [
     "Collaboration skills",
     "Collegiality",
@@ -206,17 +221,27 @@ _APP_COUNT_ORDER = ["0 - 50", "51 - 200", "201 - 400", "401 - 600", "601 +"]
 # Canonical interview-offer-percentage buckets
 _PCT_ORDER = ["0 - 25 %", "26 - 50 %", "51 - 75 %", "76 - 100 %"]
 
-
 def _parse_interview_criteria(description: str) -> list[dict]:
-    """Return list of {criterion, evaluated} dicts from the criteria table."""
+    """Return list of {criterion, evaluated} dicts from the criteria table.
+
+    Handles both English and French table formats and normalises French
+    criterion names to their English equivalents via ``_FR_TO_EN_CRITERIA``.
+    """
     results: list[dict] = []
     match = re.search(
         r"Interview evaluation criteria\s*:\s*\n(.*?)(?:\n\n|\n#|\n\*\*|\Z)",
-        description,
-        re.DOTALL,
+        description, re.DOTALL,
     )
     if not match:
+        match = re.search(
+            r"[éÉe]valuation pour les entrevues\s*:\s*\n(.*?)(?:\n\n|\n#|\n\*\*|\Z)",
+            description, re.DOTALL,
+        )
+    if not match:
         return results
+
+    skip = {"Interview components", "Composants d'entrevue"}
+
     for line in match.group(1).split("\n"):
         line = line.strip()
         if "|" not in line or line.startswith("---"):
@@ -224,13 +249,22 @@ def _parse_interview_criteria(description: str) -> list[dict]:
         parts = line.split("|", 1)
         criterion = parts[0].strip()
         detail = parts[1].strip() if len(parts) > 1 else ""
-        if not criterion or criterion == "Interview components":
+        if not criterion or criterion in skip:
             continue
+
+        # Normalise French → English
+        criterion = _FR_TO_EN_CRITERIA.get(criterion, criterion)
+
         if criterion not in _STANDARD_CRITERIA:
             continue
-        not_evaluated = any(
-            kw in detail.lower()
-            for kw in ["do not", "not formally", "not evaluated", "n/a"]
+
+        not_evaluated = any( # If any of the keywords are in the detail, the criterion is not evaluated
+            kw in detail.lower() 
+            for kw in [
+                "do not evaluate", "not formally", "not evaluated", "n/a", "do not offer" 
+                # French equivalents
+                "nous n'évaluons pas", "non évalué", "s/o",
+            ]
         )
         results.append({"criterion": criterion, "evaluated": not not_evaluated})
     return results
@@ -238,7 +272,8 @@ def _parse_interview_criteria(description: str) -> list[dict]:
 
 def _parse_interview_dates(description: str) -> list[str]:
     """Extract interview dates (e.g. 'January 23, 2025') from the Interviews section."""
-    m = re.search(r"# Interviews\s*\nDates:\s*\n(.*?)(?:Details|$)", description, re.DOTALL)
+    # Try English then French section headers
+    m = re.search(r"# (?:Interviews|Entrevues|Entretiens)\s*\nDates?\s*:\s*\n(.*?)(?:Details|Détails|$)", description, re.DOTALL)
     if not m:
         return []
     return re.findall(r"(\w+ \d+, \d{4})", m.group(1))
@@ -255,40 +290,37 @@ def _normalise_pct(raw: str) -> str:
 @router.get("/analytics/interview-dates")
 def interview_dates(session: Session = Depends(get_session)):
     """Number of programs interviewing on each date."""
+    interview_filter = or_(*[Program.description.ilike(kw) for kw in _INTERVIEW_SECTION_KEYWORDS])
     programs = session.exec(
-        select(Program).where(Program.description.ilike("%# Interviews%"))
+        select(Program).where(interview_filter)
     ).all()
 
     counter: Counter[str] = Counter()
     for p in programs:
-        seen: set[str] = set()
+        seen: set[str] = set() # To avoid counting the same date multiple times
         for d in _parse_interview_dates(p.description or ""):
             if d not in seen:
                 seen.add(d)
                 counter[d] += 1
 
-    # Sort chronologically
-    from datetime import datetime as dt
-
     def _sort_key(item: tuple[str, int]) -> dt:
         try:
-            return dt.strptime(item[0], "%B %d, %Y")
+            return dt.strptime(item[0], "%B %d, %Y") # datetime obj
         except ValueError:
             return dt.max
 
     return [
         {"date": date, "programs": cnt}
-        for date, cnt in sorted(counter.items(), key=_sort_key)
+        for date, cnt in sorted(counter.items(), key=_sort_key) # Sort by date
     ]
 
 
 @router.get("/analytics/applications-received")
 def applications_received(session: Session = Depends(get_session)):
     """Distribution of 'Average number of applications received' ranges."""
+    app_filter = or_(*[Program.description.ilike(kw) for kw in _APPLICATION_STATS_KEYWORDS])
     programs = session.exec(
-        select(Program).where(
-            Program.description.ilike("%average number of applications%")
-        )
+        select(Program).where(app_filter)
     ).all()
 
     counter: Counter[str] = Counter()
@@ -297,6 +329,11 @@ def applications_received(session: Session = Depends(get_session)):
             r"Average number of applications received by our program in the last five years\s*:\s*(.+?)(?:\n|$)",
             p.description or "",
         )
+        if not m:
+           m = re.search(
+               r"Nombre moyen de demandes soumises au programme pendant les cinq dernières années\s*:\s*(.+?)(?:\n|$)",
+               p.description or "",
+           )
         if m:
             raw = m.group(1).strip().rstrip("  ")
             # Map to canonical bucket
@@ -318,10 +355,11 @@ def applications_received(session: Session = Depends(get_session)):
 @router.get("/analytics/applications-received-by-discipline")
 def applications_received_by_discipline(session: Session = Depends(get_session)):
     """Application-count ranges broken down by discipline."""
+    app_filter = or_(*[Program.description.ilike(kw) for kw in _APPLICATION_STATS_KEYWORDS])
     programs = session.exec(
         select(Program, Discipline.name.label("discipline_name"))
         .join(Discipline)
-        .where(Program.description.ilike("%average number of applications%"))
+        .where(app_filter)
     ).all()
 
     data: dict[str, Counter[str]] = {}
@@ -330,6 +368,11 @@ def applications_received_by_discipline(session: Session = Depends(get_session))
             r"Average number of applications received by our program in the last five years\s*:\s*(.+?)(?:\n|$)",
             prog.description or "",
         )
+        if not m:
+            m = re.search(
+                r"Nombre moyen de demandes soumises au programme pendant les cinq dernières années\s*:\s*(.+?)(?:\n|$)",
+                prog.description or "",
+            )
         if not m:
             continue
         raw = m.group(1).strip().rstrip("  ")
@@ -360,24 +403,20 @@ def description_coverage(session: Session = Depends(get_session)):
     ).one()
     with_interviews = session.exec(
         select(func.count(Program.program_stream_id))
-        .where(Program.description.ilike("%# Interviews%"))
+        .where(or_(*[Program.description.ilike(kw) for kw in _INTERVIEW_SECTION_KEYWORDS]))
     ).one()
     with_apps = session.exec(
         select(func.count(Program.program_stream_id))
-        .where(Program.description.ilike("%average number of applications%"))
+        .where(or_(*[Program.description.ilike(kw) for kw in _APPLICATION_STATS_KEYWORDS]))
     ).one()
     with_criteria = session.exec(
         select(func.count(Program.program_stream_id))
-        .where(Program.description.ilike("%interview evaluation criteria%"))
+        .where(or_(*[Program.description.ilike(kw) for kw in _EVALUATION_CRITERIA_KEYWORDS]))
     ).one()
     with_citizenship = session.exec(
         select(func.count(Program.program_stream_id))
         .where(Program.description.isnot(None))
-        .where(or_(
-            Program.description.ilike("%canadian citizen%"),
-            Program.description.ilike("%permanent residen%"),
-            Program.description.ilike("%citizenship%"),
-        ))
+        .where(or_(*[Program.description.ilike(kw) for kw in _CITIZENSHIP_KEYWORDS]))
     ).one()
     with_embedding = session.exec(
         select(func.count(Program.program_stream_id))
@@ -408,18 +447,14 @@ def missing_section(
       interview | applications | criteria | citizenship
     """
     section_filters = {
-        "interview": Program.description.ilike("%# Interviews%"),
-        "applications": Program.description.ilike("%average number of applications%"),
-        "criteria": Program.description.ilike("%interview evaluation criteria%"),
-        "citizenship": or_(
-            Program.description.ilike("%canadian citizen%"),
-            Program.description.ilike("%permanent residen%"),
-            Program.description.ilike("%citizenship%"),
-        ),
+        "interview": or_(*[Program.description.ilike(kw) for kw in _INTERVIEW_SECTION_KEYWORDS]),
+        "applications": or_(*[Program.description.ilike(kw) for kw in _APPLICATION_STATS_KEYWORDS]),
+        "criteria": or_(*[Program.description.ilike(kw) for kw in _EVALUATION_CRITERIA_KEYWORDS]),
+        "citizenship": or_(*[Program.description.ilike(kw) for kw in _CITIZENSHIP_KEYWORDS]),
     }
 
     if section not in section_filters:
-        from fastapi import HTTPException
+       
         raise HTTPException(
             status_code=400,
             detail=f"Unknown section '{section}'. Use one of: {', '.join(section_filters)}",
@@ -466,10 +501,9 @@ def missing_section(
 @router.get("/analytics/interview-offer-pct")
 def interview_offer_pct(session: Session = Depends(get_session)):
     """Distribution of 'Average percentage of applicants offered interviews'."""
+    pct_filter = or_(*[Program.description.ilike(kw) for kw in _INTERVIEW_OFFER_PCT_KEYWORDS])
     programs = session.exec(
-        select(Program).where(
-            Program.description.ilike("%average percentage of applicants offered interviews%")
-        )
+        select(Program).where(pct_filter)
     ).all()
 
     counter: Counter[str] = Counter()
@@ -478,6 +512,11 @@ def interview_offer_pct(session: Session = Depends(get_session)):
             r"Average percentage of applicants offered interviews\s*:\s*(.+?)(?:\n|$)",
             p.description or "",
         )
+        if not m:
+            m = re.search(
+                r"Pourcentage moyen de candidats invités à une entrevue\s*:\s*(.+?)(?:\n|$)",
+                p.description or "",
+            )
         if m:
             raw = _normalise_pct(m.group(1).strip().rstrip("  "))
             for bucket in _PCT_ORDER:
@@ -508,10 +547,11 @@ def interview_offer_pct(session: Session = Depends(get_session)):
 @router.get("/analytics/interview-offer-pct-by-discipline")
 def interview_offer_pct_by_discipline(session: Session = Depends(get_session)):
     """Interview-offer percentage ranges broken down by discipline."""
+    pct_filter = or_(*[Program.description.ilike(kw) for kw in _INTERVIEW_OFFER_PCT_KEYWORDS])
     programs = session.exec(
         select(Program, Discipline.name.label("discipline_name"))
         .join(Discipline)
-        .where(Program.description.ilike("%average percentage of applicants offered interviews%"))
+        .where(pct_filter)
     ).all()
 
     data: dict[str, Counter[str]] = {}
@@ -521,7 +561,10 @@ def interview_offer_pct_by_discipline(session: Session = Depends(get_session)):
             prog.description or "",
         )
         if not m:
-            continue
+            m = re.search(
+                r"Pourcentage moyen de candidats invités à une entrevue\s*:\s*(.+?)(?:\n|$)",
+                prog.description or "",
+            )
         raw = _normalise_pct(m.group(1).strip().rstrip("  "))
         bucket = raw
         for b in _PCT_ORDER:
@@ -542,10 +585,9 @@ def interview_offer_pct_by_discipline(session: Session = Depends(get_session)):
 @router.get("/analytics/interview-criteria")
 def interview_criteria_counts(session: Session = Depends(get_session)):
     """How many programs evaluate each standard interview criterion."""
+    criteria_filter = or_(*[Program.description.ilike(kw) for kw in _EVALUATION_CRITERIA_KEYWORDS])
     programs = session.exec(
-        select(Program).where(
-            Program.description.ilike("%interview evaluation criteria%")
-        )
+        select(Program).where(criteria_filter)
     ).all()
 
     evaluated_counter: Counter[str] = Counter()
@@ -571,10 +613,11 @@ def interview_criteria_counts(session: Session = Depends(get_session)):
 @router.get("/analytics/interview-criteria-by-discipline")
 def interview_criteria_by_discipline(session: Session = Depends(get_session)):
     """Count of programs evaluating each criterion, grouped by discipline."""
+    criteria_filter = or_(*[Program.description.ilike(kw) for kw in _EVALUATION_CRITERIA_KEYWORDS])
     programs = session.exec(
         select(Program, Discipline.name.label("discipline_name"))
         .join(Discipline)
-        .where(Program.description.ilike("%interview evaluation criteria%"))
+        .where(criteria_filter)
     ).all()
 
     # {discipline: {criterion: evaluated_count}}
@@ -596,7 +639,7 @@ def interview_criteria_by_discipline(session: Session = Depends(get_session)):
 @router.get("/analytics/changes-over-time")
 def changes_over_time(session: Session = Depends(get_session)):
     """Description changes grouped by date."""
-    from sqlalchemy import cast, Date
+    
 
     result = session.exec(
         select(
