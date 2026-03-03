@@ -4,6 +4,9 @@ x-common-env: &common-env
   DATABASE_URL: postgresql://carms_user:carms_password@postgres:5432/carms_db
   PYTHONPATH: /app
 
+x-app-image: &app-image
+  image: mariiashmidt/carms-data-platform:latest
+
 services:
   # ── PostgreSQL + pgvector ─────────────────────────────────────────
   postgres:
@@ -26,16 +29,15 @@ services:
 
   # ── FastAPI ───────────────────────────────────────────────────────
   api:
-    build: .
+    <<: *app-image
     container_name: carms_api
-    command: uvicorn services.api.app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn services.api.app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     environment:
       <<: *common-env
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     volumes:
-      - .:/app
       - chroma_data:/app/chroma_store
     depends_on:
       postgres:
@@ -43,7 +45,7 @@ services:
 
   # ── Dagster webserver ─────────────────────────────────────────────
   dagster-webserver:
-    build: .
+    <<: *app-image
     container_name: carms_dagster_webserver
     command: dagster-webserver -h 0.0.0.0 -p 3000 -w /app/workspace.yaml
     ports:
@@ -52,7 +54,6 @@ services:
       <<: *common-env
       DAGSTER_HOME: /app/dagster_home
     volumes:
-      - .:/app
       - dagster_home:/app/dagster_home
     depends_on:
       postgres:
@@ -60,14 +61,13 @@ services:
 
   # ── Dagster daemon (schedules, sensors, run queue) ────────────────
   dagster-daemon:
-    build: .
+    <<: *app-image
     container_name: carms_dagster_daemon
     command: dagster-daemon run
     environment:
       <<: *common-env
       DAGSTER_HOME: /app/dagster_home
     volumes:
-      - .:/app
       - dagster_home:/app/dagster_home
     depends_on:
       postgres:
@@ -75,7 +75,7 @@ services:
 
   # ── Streamlit UI ──────────────────────────────────────────────────
   streamlit:
-    build: .
+    <<: *app-image
     container_name: carms_streamlit
     command: >
       streamlit run services/api/app/ui/app.py
@@ -86,8 +86,6 @@ services:
       - "8501:8501"
     environment:
       API_URL: http://api:8000
-    volumes:
-      - .:/app
     depends_on:
       - api
 
