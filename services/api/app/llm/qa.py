@@ -1,14 +1,17 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_classic.chains import RetrievalQA
-from langchain_ollama import OllamaLLM
+from langchain_openai import ChatOpenAI
 from .retriever import get_retriever
-from ..config import OLLAMA_BASE_URL
+from ..config import OPENAI_API_KEY
 
-llm = OllamaLLM(
-    model="phi",
-    base_url=OLLAMA_BASE_URL,
+llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    temperature=0,
+    api_key=OPENAI_API_KEY,
 )
+
 retriever = get_retriever()
+
 template = """
 You are an assistant answering questions about Canadian residency programs.
 

@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: carms_password
       POSTGRES_DB: carms_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -33,7 +33,7 @@ services:
       - "8000:8000"
     environment:
       <<: *common-env
-      OLLAMA_BASE_URL: http://ollama:11434
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     volumes:
       - .:/app
       - chroma_data:/app/chroma_store
@@ -91,17 +91,7 @@ services:
     depends_on:
       - api
 
-  # ── Ollama LLM server ────────────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: carms_ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
 volumes:
   postgres_data:
   chroma_data:
   dagster_home:
-  ollama_data:

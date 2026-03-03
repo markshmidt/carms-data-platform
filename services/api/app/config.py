@@ -6,7 +6,6 @@ No hardcoded defaults - missing required values will raise clear errors.
 """
 import os
 from pathlib import Path
-from typing import Optional
 from dotenv import load_dotenv
 
 
@@ -38,8 +37,7 @@ DATABASE_URL: str = _require_env("DATABASE_URL")
 SQL_ECHO: bool = os.getenv("SQL_ECHO", "false").lower() == "true"
 
 API_URL: str = os.getenv("API_URL", "http://localhost:8000")              # used by Streamlit
-OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")  # used by QA
 
 
-# ── Optional Configuration ──────────────────────────────────────────
-OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+# ── OpenAI Configuration ──────────────────────────────────────────
+OPENAI_API_KEY: str = _require_env("OPENAI_API_KEY")
