@@ -44,15 +44,19 @@ st.caption("Ollama is used to answer questions about the CaRMS program. Due to l
 question = st.text_input("Enter your question")
 
 if st.button("Ask"):
-    response = requests.post(
-        f"{API_URL}/qa",
-        json={"question": question}
-    )
-    data = response.json()
-    st.subheader("Answer")
-    st.write(data["answer"])
-    st.subheader("Sources")
-    st.write(data["sources"])
+    with st.spinner("Thinking…"):
+        response = requests.post(
+            f"{API_URL}/qa",
+            json={"question": question}
+        )
+    data = _safe_json(response)
+    if data and "answer" in data:
+        st.subheader("Answer")
+        st.write(data["answer"])
+        st.subheader("Sources")
+        st.write(data.get("sources", ""))
+    else:
+        st.error(f"QA request failed (HTTP {response.status_code}). Is Ollama running?")
 
 # ════════════════════════════════════════════════════════════════════
 # Search Section

@@ -565,6 +565,8 @@ def interview_offer_pct_by_discipline(session: Session = Depends(get_session)):
                 r"Pourcentage moyen de candidats invités à une entrevue\s*:\s*(.+?)(?:\n|$)",
                 prog.description or "",
             )
+        if not m:
+            continue
         raw = _normalise_pct(m.group(1).strip().rstrip("  "))
         bucket = raw
         for b in _PCT_ORDER:
