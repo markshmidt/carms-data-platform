@@ -364,10 +364,17 @@ def check_program_count(context):
 def embed_programs(context: AssetExecutionContext, load_programs_to_db):
     """Generate vector embeddings for programs that don't have one yet."""
 
-    from services.api.app.config import OPENAI_API_KEY
+    import os
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY environment variable is required for embedding generation. "
+            "Please set it in your environment or docker-compose.yaml"
+        )
+    
     embeddings = OpenAIEmbeddings(
         model="text-embedding-3-small",
-        api_key=OPENAI_API_KEY,
+        api_key=openai_api_key,
     )
 
     embedded = 0
@@ -388,17 +395,44 @@ def embed_programs(context: AssetExecutionContext, load_programs_to_db):
                 "total": len(programs),
             })
             return 
-        texts = [p.description for p in programs_to_embed]
-        vectors = embeddings.embed_documents(texts)
+        
+        # Batch embeddings to avoid rate limits (OpenAI allows ~3000 req/min)
+        batch_size = 100
+        total_batches = (len(programs_to_embed) + batch_size - 1) // batch_size
+        
+        context.log.info(f"Embedding {len(programs_to_embed)} programs in {total_batches} batches of {batch_size}")
+        
+        for batch_idx in range(0, len(programs_to_embed), batch_size):
+            batch = programs_to_embed[batch_idx:batch_idx + batch_size]
+            texts = [p.description for p in batch if p.description]
+            
+            if not texts:
+                continue
+                
+            try:
+                context.log.info(f"Processing batch {batch_idx // batch_size + 1}/{total_batches} ({len(texts)} texts)")
+                vectors = embeddings.embed_documents(texts)
+                
+                # Assign back
+                text_idx = 0
+                for program in batch:
+                    if program.description:
+                        program.embedding = vectors[text_idx]
+                        text_idx += 1
+                
+                session.commit()
+                embedded += len(texts)
+                context.log.info(f"Batch {batch_idx // batch_size + 1} complete. Total embedded: {embedded}")
+                
+            except Exception as e:
+                context.log.error(f"Error embedding batch {batch_idx // batch_size + 1}: {e}")
+                session.rollback()
+                raise
 
-        # Assign back
-        for program, vector in zip(programs_to_embed, vectors):
-            program.embedding = vector
-
-        session.commit()
+        skipped = len(programs) - embedded
 
         context.add_output_metadata({
-                "embedded": len(programs_to_embed),
-                "skipped": len(programs) - len(programs_to_embed),
+                "embedded": embedded,
+                "skipped": skipped,
                 "total": len(programs),
             })

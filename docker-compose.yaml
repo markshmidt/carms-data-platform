@@ -3,6 +3,7 @@ version: "3.9"
 x-common-env: &common-env
   DATABASE_URL: postgresql://carms_user:carms_password@postgres:5432/carms_db
   PYTHONPATH: /app
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
 
 x-app-image: &app-image
   image: mariiashmidt/carms-data-platform:latest
@@ -85,7 +86,9 @@ services:
     ports:
       - "8501:8501"
     environment:
+      <<: *common-env
       API_URL: http://api:8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       - api
 
