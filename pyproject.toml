@@ -21,25 +21,18 @@ dependencies = [
     "dagster (>=1.12.15,<2.0.0)",
     "dagster-webserver (>=1.12.15,<2.0.0)",
 
-    # LLM / Embeddings
+    # LLM / Embeddings (all via OpenAI — no local models needed)
     "langchain (>=1.2.10,<2.0.0)",
     "langchain-openai (>=1.1.10,<2.0.0)",
     "langchain-community (>=0.4.1,<0.5.0)",
-    "langchain-huggingface (>=1.2.0,<2.0.0)",
     "openai (>=2.24.0,<3.0.0)",
     "tiktoken (>=0.12.0,<0.13.0)",
     "langchain-chroma (>=0.2.0,<1.0.0)",
-    "langchain-ollama (>=0.3.0,<1.0.0)",
     "chromadb (>=1.5.1,<2.0.0)",
-    "ollama (>=0.6.1,<0.7.0)",
-    "sentence-transformers (>=5.2.3,<6.0.0)",
 
     # Utils
     "python-dotenv (>=1.2.1,<2.0.0)",
     "pandas (<3)",
-    "torch (>=2.10.0,<3.0.0)",
-    "torchvision (>=0.25.0,<0.26.0)",
-    "torchaudio (>=2.10.0,<3.0.0)",
     "streamlit (>=1.54.0,<2.0.0)",
 ]
 
@@ -50,16 +43,6 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 package-mode = false
-
-[tool.poetry.dependencies]
-torch = {source = "pytorch-cu126"}
-torchvision = {source = "pytorch-cu126"}
-torchaudio = {source = "pytorch-cu126"}
-
-[[tool.poetry.source]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-priority = "explicit"
 
 [tool.dagster]
 module_name = "services.piplines.pipeline.definitions"

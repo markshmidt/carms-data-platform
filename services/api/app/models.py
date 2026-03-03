@@ -41,7 +41,7 @@ class Program(SQLModel, table=True):
     stream: Optional[ProgramStream] = Relationship(back_populates="programs")
     description_hash: Optional[str] = Field(default=None, index=True)
     embedding: Optional[list[float]] = Field(
-        sa_column=Column(Vector(384))
+        sa_column=Column(Vector(1536))
     )
     updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 

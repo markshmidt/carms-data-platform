@@ -1,25 +1,28 @@
-FROM python:3.12-slim
+# ── Stage 1: Builder ──────────────────────────────────────────────
+FROM python:3.12-slim AS builder
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential libpq-dev curl \
+    build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Poetry
-RUN pip install poetry
-
-# Disable venv inside container
-ENV POETRY_VIRTUALENVS_CREATE=false \
-    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy dependency files first (cache layer)
-COPY pyproject.toml poetry.lock* ./
+COPY requirements-docker.txt .
+RUN pip install --no-cache-dir -r requirements-docker.txt
 
-RUN poetry install --no-interaction --no-ansi
+# ── Stage 2: Runtime ─────────────────────────────────────────────
+FROM python:3.12-slim
 
-# Copy project
+RUN apt-get update && apt-get install -y \
+    libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages + CLI scripts from builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+WORKDIR /app
 COPY . .
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1

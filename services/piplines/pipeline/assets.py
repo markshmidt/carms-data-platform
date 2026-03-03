@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dagster import asset, asset_check, AssetExecutionContext, AssetCheckResult
 from sqlmodel import select
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 # ── Project root on sys.path so cross-service imports work ─────────
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -364,8 +364,10 @@ def check_program_count(context):
 def embed_programs(context: AssetExecutionContext, load_programs_to_db):
     """Generate vector embeddings for programs that don't have one yet."""
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="intfloat/e5-small-v2"
+    from services.api.app.config import OPENAI_API_KEY
+    embeddings = OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        api_key=OPENAI_API_KEY,
     )
 
     embedded = 0

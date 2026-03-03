@@ -1,7 +1,9 @@
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from ..config import OPENAI_API_KEY
+
 
 def get_embeddings():
-    return HuggingFaceEmbeddings(
-    model_name="intfloat/e5-small-v2",
-    model_kwargs={"device": "cpu"},
+    return OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        api_key=OPENAI_API_KEY,
     )
