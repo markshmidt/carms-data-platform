@@ -40,7 +40,7 @@ st.divider()
 # QA Section
 # ════════════════════════════════════════════════════════════════════
 st.header("Ask a CaRMS Program Question")
-st.caption("Ollama is used to answer questions about the CaRMS program. Due to limited model capabilities, answer may take time to generate.")
+st.caption("OpenAPI is used to answer questions about the CaRMS program.")
 question = st.text_input("Enter your question")
 
 if st.button("Ask"):
@@ -56,7 +56,7 @@ if st.button("Ask"):
         st.subheader("Sources")
         st.write(data.get("sources", ""))
     else:
-        st.error(f"QA request failed (HTTP {response.status_code}). Is Ollama running?")
+        st.error(f"QA request failed (HTTP {response.status_code}). Is OpenAPI running?")
 
 # ════════════════════════════════════════════════════════════════════
 # Search Section
