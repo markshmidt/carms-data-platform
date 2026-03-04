@@ -1,22 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from services.api.app.llm.qa import qa
+from sqlmodel import Session
+from services.api.app.llm.qa import ask_hybrid, qa
+from services.api.app.database import get_session
 
 router = APIRouter()
 
-
 class QuestionRequest(BaseModel):
     question: str
-
-
+ 
 @router.post("/qa")
-def ask_question(request: QuestionRequest):
-
-    result = qa.invoke(request.question)
-
-    return {
-        "answer": result["result"],
-        "sources": [
-            doc.metadata for doc in result.get("source_documents", [])
-        ]
-    }
+def ask_question(request: QuestionRequest, session: Session = Depends(get_session)):
+    return ask_hybrid(session, request.question)

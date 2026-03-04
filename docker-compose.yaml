@@ -38,6 +38,8 @@ services:
     environment:
       <<: *common-env
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+    volumes:
+      - chroma_data:/app/chroma_store
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,4 +94,5 @@ services:
 
 volumes:
   postgres_data:
+  chroma_data:
   dagster_home:

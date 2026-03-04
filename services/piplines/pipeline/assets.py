@@ -34,7 +34,7 @@ def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFKC", text).strip()
 
 # ── Constants ──────────────────────────────────────────────────────
-DATA_PATH = BASE_DIR / "data" / "raw" / "1503_markdown_program_descriptions_v2.json"
+DATA_PATH = BASE_DIR / "data" / "1503_markdown_program_descriptions_v2.json"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -94,7 +94,7 @@ def parse_program_records(staging_program_descriptions):
         header_index = next(
             (i for i, line in enumerate(lines) if line.startswith("#")),
             None
-        )
+        ) # returns the index of the line that starts with #
 
         if header_index is None:
             skipped_headers.append("NO HEADER")
@@ -107,10 +107,10 @@ def parse_program_records(staging_program_descriptions):
             next_line = lines[header_index + 1].strip()
 
             if (
-                next_line
+                next_line 
                 and not next_line.startswith("#")
                 and "Stream" not in next_line
-                and "Residency Match" not in next_line
+                and "Residency Match" not in next_line # if the next line is not a stream or residency match, add it to the header
             ):
                 header_line = f"{header_line} {next_line}"
             if header_line.endswith("-"):

@@ -40,7 +40,7 @@ st.divider()
 # QA Section
 # ════════════════════════════════════════════════════════════════════
 st.header("Ask a CaRMS Program Question")
-st.caption("OpenAPI is used to answer questions about the CaRMS program.")
+st.caption("OpenAI is used to answer questions about the CaRMS program with a combination of SQL and RAG.")
 question = st.text_input("Enter your question")
 
 if st.button("Ask"):
@@ -53,8 +53,10 @@ if st.button("Ask"):
     if data and "answer" in data:
         st.subheader("Answer")
         st.write(data["answer"])
-        st.subheader("Sources")
-        st.write(data.get("sources", ""))
+        if data.get("sources") is not None:
+            st.subheader("Sources")
+            for source in data.get("sources", []):
+                st.write(source)
     else:
         st.error(f"QA request failed (HTTP {response.status_code}). Is OpenAPI running?")
 
