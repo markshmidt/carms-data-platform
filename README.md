@@ -2,7 +2,7 @@
 Modern Data Engineering + AI RAG ans SQL analytic system using PostgreSQL, SQLModel, Alembic, Dagster, FastAPI, LangChain, pgvector, Ollama & OpenAI
 
 
-<img width="1919" height="1068" alt="image" src="https://github.com/user-attachments/assets/c4e68d91-caf0-41bc-a6ef-852b7bb842a7" />
+<img width="1914" height="1071" alt="image" src="https://github.com/user-attachments/assets/135999a3-09ec-4e5c-90f7-724962a89732" />
 
 
 ## Project Overview
@@ -21,7 +21,7 @@ It demonstrates:
 - REST API (FastAPI)
 - Interactive dashboard (Streamlit)
 - Docker-based orchestration
-- Cloud deployment (AWS ES5)
+- Cloud deployment (AWS EC2)
 
 The platform transforms scraped residency program descriptions into:
 
@@ -62,7 +62,7 @@ Scraped CaRMS program data contained many inconsistencies such as:
 
 - English and French naming (696 against 119 programs)
 - Multi-line discipline names (most programs were in format school - name - site, while some might have line break)
-- Site naming variations (Belleville - Quinte, though contains "-, should be parsed as site together)
+- Site naming variations (Belleville - Quinte, though contains "-", should be parsed as site together)
 - Irregular dash formatting (-, "—", etc)
 
 The parser resolves these issues using:
@@ -70,7 +70,7 @@ The parser resolves these issues using:
 • dash normalization  
 • continuation line detection  (if the next line is not a stream or residency match, add it to the header)
 • discipline/site separation  
-• multilingual normalization  
+• multilingual normalization  (through normalization dicts mapping french to english names)
 • integrated program detection (if programs contains words like integrated)
 
 The parsing strategy intentionally avoids hardcoded discipline lists to remain robust to future changes.
@@ -81,10 +81,13 @@ The parsing strategy intentionally avoids hardcoded discipline lists to remain r
 
 Dagster orchestrates the ETL workflow through assets:
 
-- parse_programs
+- raw_program_descriptions
+- staging_program_descriptions
+- parse_program_records
 - load_programs_to_db
+- check_program_count
 - embed_programs
-
+And helper functions / normalisations dict.
 Dagster Web UI allows manual materialization of assets.
 <img width="1152" height="248" alt="image" src="https://github.com/user-attachments/assets/710f2131-5e02-4dfc-8a43-6de0e77c3488" />
 
@@ -348,15 +351,46 @@ Dependency Management: Poetry
 
 ---
 
-# Final Summary
+# FUTURE IMPROVEMENTS
+Although the current system successfully parses and structures CaRMS program data, several improvements could further enhance the quality, maintainability, and analytical value of the platform.
 
-This project demonstrates how modern data engineering, analytics, and AI systems can be integrated into a unified platform.
+## 1. Structured Parsing of Program Descriptions
 
-It combines:
+Currently, program descriptions are stored as raw markdown text. A future improvement would be to parse these descriptions into structured attributes such as:
 
-• relational analytics  
-• semantic search  
-• natural language AI queries  
+- Accreditation status
+- Approximate quota
+- Application requirements
+- Program director information
+- Contact details
+- Program duration
 
+This would allow the platform to support more precise search filters and analytics, rather than relying only on full-text search.
 to enable intelligent exploration of residency program data.
 
+## 2.Improved Language Normalization
+
+Although French disciplines and streams are currently mapped to English, additional improvements could include:
+- bilingual discipline and stream tables
+- improved normalization of French program descriptions
+- automatic detection of language for description sections
+
+## 3. Search and Question-Answering Improvements
+The platform currently supports RAG-based question answering using embeddings. Future work could improve this by:
+- hybrid search (vector + SQL filtering)
+- improved prompt engineering for program comparison questions
+- evaluation metrics for LLM answer accuracy
+
+## 4. Improved Stream and Site Detection
+
+The parsing logic currently handles many edge cases, but future improvements could include:
+-probabilistic parsing validation
+- anomaly detection for unusual site or stream patterns
+- validation rules for program-site relationships
+
+## 5. Dagster automation
+Currently the data pipeline runs manually. Future improvements could include using Dagster automation features to:
+- schedule periodic scraping and ingestion of new program data
+- automatically trigger downstream assets when source data changes
+- run data validation checks after each pipeline execution
+- generate alerts when parsing errors or unexpected schema changes occur
