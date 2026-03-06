@@ -22,16 +22,21 @@ from services.api.app.models import (  # noqa: E402
 )
 from services.api.app.database import engine, Session  # noqa: E402
 from .normalization import DISCIPLINE_FR_TO_EN, SCHOOL_FR_TO_EN
-import unicodedata
+from .parsing_helpers import (
+    _clean_discipline_name,
+    _extract_stream,
+    _is_metadata_line,
+    _next_nonempty,
+    _take_until_metadata,
+    normalize_text,
+    split_discipline_and_site,
+)
 from sqlalchemy import text
 from sqlmodel import SQLModel
 with engine.connect() as conn:
     conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     conn.commit()
 SQLModel.metadata.create_all(engine)
-
-def normalize_text(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).strip()
 
 # ── Constants ──────────────────────────────────────────────────────
 DATA_PATH = BASE_DIR / "data" / "1503_markdown_program_descriptions_v2.json"
@@ -83,139 +88,200 @@ def staging_program_descriptions(raw_program_descriptions):
 
 @asset
 def parse_program_records(staging_program_descriptions):
-
+    """
+    Parse program records in two passes:
+    1. First pass: Parse all records (may include cities in discipline names)
+    2. Second pass: Analyze parsed data to identify common discipline bases,
+       then extract city suffixes from disciplines that share the same base
+    """
     parsed = []
     skipped_headers = []
 
     for record in staging_program_descriptions:
-        lines = record["clean_text"].split("\n")
+        # keep original lines for description joining
+        raw_lines = record["clean_text"].split("\n")
 
-        # Find header
+        # cleaned lines for header detection
+        lines = [ln.strip() for ln in raw_lines if ln.strip()]
+
+        # Find the header line
         header_index = next(
-            (i for i, line in enumerate(lines) if line.startswith("#")),
+            (
+                i
+                for i, line in enumerate(lines)
+                if line.lstrip().startswith("#") and not line.lstrip().startswith("##")
+            ),
             None
-        ) # returns the index of the line that starts with #
+        ) # header index is the index of the line that starts with "#" and does not start with "##"
 
         if header_index is None:
             skipped_headers.append("NO HEADER")
             continue
 
-        header_line = lines[header_index].strip("# ").strip()
+        header_line = lines[header_index].lstrip("# ").strip() 
 
-        # Handle wrapped header (French long ones)
-        if header_index + 1 < len(lines):
-            next_line = lines[header_index + 1].strip()
+        # Handle header continuation: if header ends with "-", next line is site 
+        # This handles cases like:
+        # # School - Discipline -
+        # St. John's
+        site_continuation = None
+        if header_line.endswith("-"):
+            j = _next_nonempty(lines, header_index + 1) # next non empty line after header index
+            if j is not None:
+                next_line = lines[j].strip()
+                # Only accept if it's NOT another header and NOT metadata
+                if not next_line.startswith("#") and not _is_metadata_line(next_line):
+                    site_continuation = next_line
+                    # Remove the trailing "-" from header_line
+                    header_line = header_line.rstrip("-").strip()
 
-            if (
-                next_line 
-                and not next_line.startswith("#")
-                and "Stream" not in next_line
-                and "Residency Match" not in next_line # if the next line is not a stream or residency match, add it to the header
-            ):
-                header_line = f"{header_line} {next_line}"
-            if header_line.endswith("-"):
-                header_line = f"{header_line}{next_line}"
-            else:
-                header_line = f"{header_line} {next_line}"
-
-        # Normalize dashes + spacing
+        # Normalize dash spacing
         header_line = header_line.replace("–", "-").replace("—", "-")
-        header_line = re.sub(r"\s*-\s*", " - ", header_line)
+        header_line = re.sub(r"\s+-\s+", " - ", header_line)
+
+        # clean extra spaces
         header_line = re.sub(r"\s+", " ", header_line).strip()
 
-        parts = header_line.split(" - ")
-
-        if len(parts) < 2:
+        # split header line into parts by " - "
+        parts = [p.strip() for p in header_line.split(" - ") if p.strip()]
+        if len(parts) < 2: #bad header line
             skipped_headers.append(header_line)
             continue
 
+        # school is the first part in header like "McGill University - Medicine - Montreal"
         school_name = parts[0].strip()
         school_norm = normalize_text(school_name)
         school_name = SCHOOL_FR_TO_EN.get(school_norm, school_name)
-        remainder = [p.strip() for p in parts[1:] if p.strip()]
 
-        # Discipline parsing logic
-
-        discipline_name = None
-        program_site = None
-
+        # discipline and site are the remaining parts in header like "Medicine - Montreal"
+        # use known disciplines to identify where discipline ends and site begins (a bit hardcoded)
+        remainder = parts[1:]
         if not remainder:
             skipped_headers.append(header_line)
             continue
+        
+        discipline_name, site_str = split_discipline_and_site(remainder)
+        
+        # If we found a site continuation (header ended with "-"), append it to site
+        if site_continuation:
+            if site_str:
+                site_str = f"{site_str} {site_continuation}".strip()
+            else:
+                site_str = site_continuation
+        
+        site_parts = [site_str] if site_str else []
+        
+        if not discipline_name:
+            skipped_headers.append(header_line)
+            continue
 
-        first = remainder[0]
-        first_lower = first.lower()
+        # Clean discipline name (fallback for edge cases - split_discipline_and_site should handle most)
+        discipline_name = _clean_discipline_name(discipline_name)
 
-       # Family Medicine (EN + FR)
+        # take site parts until metadata line (no "Residency Match" hardcode)
+        site_parts = _take_until_metadata(site_parts)
+        program_site = " - ".join(site_parts).strip() if site_parts else ""
 
-        if (
-            first_lower.startswith("family medicine")
-            or first_lower.startswith("médecine familiale")
-        ):
-
+        # special case for Family Medicine integrated variants
+        first_lower = discipline_name.lower()
+        if first_lower.startswith("family medicine") or first_lower.startswith("médecine familiale"):
             discipline_base = "Family Medicine"
-
-            # Exact allowed integrated variants
             allowed_integrated = {
                 "integrated clinician scholar",
                 "integrated emergency medicine",
             }
-
-            if len(remainder) > 1:
-                second_clean = remainder[1].strip().lower()
-
-                if second_clean in allowed_integrated:
-                    discipline_name = f"{discipline_base} {remainder[1]}"
-                    program_site = " - ".join(remainder[2:]) if len(remainder) > 2 else None
-                else:
-                    # everything else is site
-                    discipline_name = discipline_base
-                    program_site = " - ".join(remainder[1:]) if len(remainder) > 1 else None
+            #if program site contains an allowed integrated variant, add it to the discipline name
+            if program_site and program_site.strip().lower() in allowed_integrated:
+                discipline_name = f"{discipline_base} {program_site.strip()}"
+                program_site = "" #make program site empty for now, we will add it back later
             else:
                 discipline_name = discipline_base
-                program_site = None
 
-        else:
-            discipline_name = remainder[0]
-            program_site = " - ".join(remainder[1:]) if len(remainder) > 1 else None
-
-        # French → English mapping
-
+        # French to English discipline mapping
+        # Try full match first
         discipline_norm = normalize_text(discipline_name)
-        discipline_name = DISCIPLINE_FR_TO_EN.get(
-            discipline_norm,
-            discipline_name
-        )
+        discipline_name = DISCIPLINE_FR_TO_EN.get(discipline_norm, discipline_name)
+        # if no match, try matching parts (for multi-part French disciplines)
+        # for example "Oto-rhino-laryngologie et chirurgie cervico-faciale" -> "Oto-rhino-laryngologie and cervico-facial surgery"
+        if discipline_name == discipline_norm:  # No translation happened
+            # Split by " - " to check individual parts
+            parts = discipline_name.split(" - ")
+            translated_parts = []
+            changed = False
+            
+            for part in parts:
+                part_norm = normalize_text(part)
+                translated_part = DISCIPLINE_FR_TO_EN.get(part_norm, part) #try matching again
+                
+                # Also try partial matches (for cases like "Oto-rhino-laryngologie et chirurgie cervico")
+                if translated_part == part:
+                    # Try to find a French discipline that starts with this part
+                    for fr_name, en_name in DISCIPLINE_FR_TO_EN.items():
+                        fr_norm = normalize_text(fr_name)
+                        # Check if this part is the start of a French discipline name
+                        if fr_norm.startswith(part_norm) or part_norm.startswith(fr_norm[:20]):
+                            translated_part = en_name
+                            changed = True
+                            break
+                
+                if translated_part != part: #if the part was translated, add it to the translated parts
+                    changed = True
+                
+                translated_parts.append(translated_part)
+            
+            # If any part was translated, reconstruct
+            if changed:
+                discipline_name = " - ".join(translated_parts)
+            
+            # Clean up any city names or location suffixes that might have been included in French discipline names
+            # (e.g., "Oto-rhino-laryngologie et chirurgie cervico- faciale - Sherbrooke faciale")
+            # structural approach: if a part appears after what looks like a complete discipline,
+            # and it's short/capitalized, it's likely a city suffix that got included
+            final_parts = discipline_name.split(" - ") #split discipline name into parts by " - " like "Oto-rhino-laryngologie and cervico-facial surgery" -> ["Oto-rhino-laryngologie", "and", "cervico-facial", "surgery"]
+            cleaned_parts = []
+            
+            # Work through parts, keeping discipline parts and removing city-like suffixes
+            for i, part in enumerate(final_parts):
+                # Skip very short parts that appear at the end (likely city suffixes)
+                # This handles cases like "faciale", "cervico" that are anatomical terms
+                # but also cases where city names got included
+                words = part.split()
+                
+                # If it's a very short part (1 word, <= 8 chars) at the end, might be a suffix (like "faciale", "cervico")
+                # But only if we already have substantial discipline content (more than 15 chars)
+                if i == len(final_parts) - 1 and len(words) == 1 and len(part) <= 8:
+                    # Check if previous parts already form a substantial discipline name
+                    prev_text = " - ".join(final_parts[:i])
+                    if len(prev_text) > 15:  
+                        continue
+                
+                cleaned_parts.append(part)
+            
+            if len(cleaned_parts) < len(final_parts): #if we removed some parts, join the remaining parts back together
+                discipline_name = " - ".join(cleaned_parts).strip()
 
-        # Program ID
-
+        # program stream id
         raw_id = record["program_id"]
-        id_parts = raw_id.split("|")
-
+        id_parts = raw_id.split("|") 
         if len(id_parts) != 2:
             raise ValueError(f"Invalid program_id format: {raw_id}")
+        program_stream_id = id_parts[1].strip() #program stream id is the second part of the program_id after "|"
 
-        program_stream_id = id_parts[1].strip()
+        # program stream is the stream of the program (IMG / CMG etc)
+        program_stream = _extract_stream(lines, header_index)
 
-        # Stream
-
-        program_stream = next(
-            (line.strip() for line in lines if "Stream" in line),
-            "Unknown"
-        )
-
-        # Description
-
+        # program description
         description_start = next(
-            (i for i, line in enumerate(lines) if line.startswith("##")),
+            (i for i, ln in enumerate(raw_lines) if ln.strip().startswith("##")),
             None
         )
-
         program_description = (
-            "\n".join(lines[description_start:])
+            "\n".join(raw_lines[description_start:]).strip()
             if description_start is not None
-            else record["clean_text"]
+            else record["clean_text"].strip()
         )
+
+        program_name = f"{school_name}/{discipline_name}/{program_site or ''}".rstrip("/")
 
         parsed.append({
             "program_stream_id": program_stream_id,
@@ -223,19 +289,17 @@ def parse_program_records(staging_program_descriptions):
             "discipline_name": discipline_name,
             "program_site": program_site,
             "program_stream": program_stream,
-            "program_name": f"{school_name}/{discipline_name}/{program_site}",
+            "program_name": program_name,
             "program_description": program_description,
-            "source_url": record["source_url"]
+            "source_url": record["source_url"],
         })
 
+    # Don't fail the whole pipeline if a few are weird
     if skipped_headers:
-        raise Exception(
-            f"{len(skipped_headers)} records skipped. Example: {skipped_headers[:5]}"
-        )
+        print(f"[parse_program_records] skipped={len(skipped_headers)} sample={skipped_headers[:5]}")
 
     print("Total parsed:", len(parsed))
     return parsed
-
 @asset
 def load_programs_to_db(context: AssetExecutionContext, parse_program_records):
 

@@ -1,4 +1,43 @@
-# Mapoping French -> English for disciplines since there are french descriptions in the data
+# Known disciplines list - used to identify where discipline ends and site begins
+KNOWN_DISCIPLINES = {
+    "Anesthesiology",
+    "Anesthesiology - Clinician Investigator Program",
+    "Cardiac Surgery",
+    "Dermatology",
+    "Diagnostic Radiology",
+    "Diagnostic and Clinical Pathology",
+    "Diagnostic and Molecular Pathology",
+    "Pathology",
+    "Emergency Medicine",
+    "Family Medicine",
+    "General Surgery",
+    "Hematological Pathology",
+    "Internal Medicine",
+    "Medical Genetics and Genomics",
+    "Medical Microbiology",
+    "Neurology",
+    "Neurology - Pediatric",
+    "Neuropathology",
+    "Neurosurgery",
+    "Nuclear Medicine",
+    "Obstetrics and Gynecology",
+    "Ophthalmology",
+    "Orthopedic Surgery",
+    "Otolaryngology",
+    "Otolaryngology - Head and Neck Surgery",
+    "Pediatrics",
+    "Pediatrics - Clinician Scientist and Investigator Training Program",
+    "Pediatrics - Research Track",
+    "Physical Medicine & Rehabilitation",
+    "Plastic Surgery",
+    "Psychiatry",
+    "Psychiatry - Research Track",
+    "Public Health and Preventive Medicine",
+    "Public Health and Preventive Medicine including Family Medicine",
+    "Radiation Oncology",
+    "Urology",
+    "Vascular Surgery",
+}
 
 DISCIPLINE_FR_TO_EN = {
     "Anesthésiologie": "Anesthesiology",
@@ -21,16 +60,32 @@ DISCIPLINE_FR_TO_EN = {
     "Ophtalmologie": "Ophthalmology",
     "Oto-rhino-laryngologie et chirurgie cervico": "Otolaryngology",
     "Oto-rhino-laryngologie et chirurgie cervico-faciale": "Otolaryngology",
+    "Oto-rhino-laryngologie et chirurgie cervico- faciale": "Otolaryngology",
+    "Oto-rhino-laryngologie": "Otolaryngology",
     "Pathologie diagnostique et moléculaire": "Pathology",
     "Pédiatrie": "Pediatrics",
     "Psychiatrie": "Psychiatry",
     "Santé publique et médecine préventive": "Public Health and Preventive Medicine",
     "Urologie": "Urology",
+    "Radio-oncologie": "Radiation Oncology",
+    "Radiologie diagnostic": "Diagnostic Radiology",
 }
 SCHOOL_FR_TO_EN = {
     "université mcgill": "McGill University",
-    "université d’ottawa": "University of Ottawa",
+    "Université d’Ottawa": "University of Ottawa",
     "université d'ottawa": "University of Ottawa",
     "université de montréal": "University of Montreal",
     "université de sherbrooke": "University of Sherbrooke",
+    "Université McGill": "McGill University",
+}
+
+# Mapping French -> English for streams
+STREAM_FR_TO_EN = {
+    "groupe régulier pour tous": "Regular Stream for All",
+    "groupe régulier incluant motp/mmtp pour tous": "Regular Stream including MOTP/MMTP for All",
+    "groupe régulier - service post-formation pour tous": "Regular RoS Stream for All",
+    "groupe dcm pour dcm": "CMG Stream for CMG",
+    "groupe régulier incluant pimm/pmem pour tous": "Regular Stream including MOTP/MMTP for All",
+    "groupe dcm incluant pimm/pmem pour dcm": "CMG Stream including MOTP/MMTP for CMG",
+
 }
